@@ -9,33 +9,33 @@ module Grape
   class API
     class << self
       attr_reader :route_set
-      
+
       def logger
         @logger ||= Logger.new($STDOUT)
       end
-      
+
       def reset!
         @settings = [{}]
         @route_set = Rack::Mount::RouteSet.new
         @prototype = nil
       end
-      
+
       def call(env)
         logger.info "#{env['REQUEST_METHOD']} #{env['PATH_INFO']}"
         route_set.freeze.call(env)
       end
-      
+
       # Settings are a stack, so when we
       # want to access them they are merged
       # in the order pushed.
       def settings
         @settings.inject({}){|f,h| f.merge!(h); f}
       end
-      
+
       def settings_stack
         @settings
       end
-      
+
       # Set a configuration value for this
       # namespace.
       #
@@ -44,23 +44,23 @@ module Grape
       def set(key, value)
         @settings.last[key.to_sym] = value
       end
-      
+
       # Define a root URL prefix for your entire
       # API.
       def prefix(prefix = nil)
         prefix ? set(:root_prefix, prefix) : settings[:root_prefix]
       end
-      
+
       # Specify an API version.
       #
       # @example API with legacy support.
       #   class MyAPI < Grape::API
       #     version 'v2'
-      #     
+      #
       #     get '/main' do
       #       {:some => 'data'}
       #     end
-      #         
+      #
       #     version 'v1' do
       #       get '/main' do
       #         {:legacy => 'data'}
@@ -71,8 +71,8 @@ module Grape
       def version(*new_versions, &block)
         new_versions.any? ? nest(block){ set(:version, new_versions) } : settings[:version]
       end
-      
-      # Specify the default format for the API's 
+
+      # Specify the default format for the API's
       # serializers. Currently only `:json` is
       # supported.
       def default_format(new_format = nil)
@@ -103,7 +103,7 @@ module Grape
           m
         end
       end
-      
+
       # Add an authentication type to the API. Currently
       # only `:http_basic` is supported.
       def auth(type = nil, options = {}, &block)
@@ -113,7 +113,7 @@ module Grape
           settings[:auth]
         end
       end
-      
+
       # Add HTTP Basic authorization to the API.
       #
       # @param [Hash] options A hash of options.
@@ -122,7 +122,7 @@ module Grape
         options[:realm] ||= "API Authorization"
         auth :http_basic, options, &block
       end
-      
+
       # Defines a route that will be recognized
       # by the Grape API.
       #
@@ -142,24 +142,24 @@ module Grape
         endpoint = build_endpoint(&block)
         options = {}
         options[:version] = /#{version.join('|')}/ if version
-        
+
         methods.each do |method|
           paths.each do |path|
             path = Rack::Mount::Strexp.compile(compile_path(path), options, ['/'], true)
-            route_set.add_route(endpoint, 
-              :path_info => path, 
+            route_set.add_route(endpoint,
+              :path_info => path,
               :request_method => (method.to_s.upcase unless method == :any)
             )
           end
         end
       end
-      
+
       def get(*paths, &block); route('GET', paths, &block) end
       def post(*paths, &block); route('POST', paths, &block) end
       def put(*paths, &block); route('PUT', paths, &block) end
       def head(*paths, &block); route('HEAD', paths, &block) end
       def delete(*paths, &block); route('DELETE', paths, &block) end
-      
+
       def namespace(space = nil, &block)
         if space || block_given?
           nest(block) do
@@ -169,13 +169,13 @@ module Grape
           Rack::Mount::Utils.normalize_path(settings_stack.map{|s| s[:namespace]}.join('/'))
         end
       end
-      
+
       alias_method :group, :namespace
       alias_method :resource, :namespace
       alias_method :resources, :namespace
-      
+
       # Create a scope without affecting the URL.
-      # 
+      #
       # @param name [Symbol] Purely placebo, just allows to to name the scope to make the code more readable.
       def scope(name = nil, &block)
         nest(block)
@@ -188,7 +188,7 @@ module Grape
       # @param middleware_class [Class] The class of the middleware you'd like to inject.
       def use(middleware_class, *args)
         settings_stack.last[:middleware] ||= []
-        settings_stack.last[:middleware] << [middleware_class, *args]        
+        settings_stack.last[:middleware] << [middleware_class, *args]
       end
 
       # Retrieve an array of the middleware classes
@@ -198,8 +198,12 @@ module Grape
         settings_stack.inject([]){|a,s| a += s[:middleware] if s[:middleware]; a}
       end
 
+      def callback(name)
+        set(:callback, name)
+      end
+
       protected
-      
+
       # Execute first the provided block, then each of the
       # block passed in. Allows for simple 'before' setups
       # of settings stack pushes.
@@ -214,31 +218,31 @@ module Grape
           instance_eval &block
         end
       end
-      
+
       def build_endpoint(&block)
         b = Rack::Builder.new
         b.use Grape::Middleware::Error
         b.use Rack::Auth::Basic, settings[:auth][:realm], &settings[:auth][:proc] if settings[:auth] && settings[:auth][:type] == :http_basic
-        b.use Grape::Middleware::Prefixer, :prefix => prefix if prefix        
+        b.use Grape::Middleware::Prefixer, :prefix => prefix if prefix
         b.use Grape::Middleware::Versioner, :versions => (version if version.is_a?(Array)) if version
-        b.use Grape::Middleware::Formatter, :default_format => default_format || :json
+        b.use Grape::Middleware::Formatter, :default_format => default_format || :json, :callback => settings[:callback]
         middleware.each{|m| b.use *m }
 
         endpoint = Grape::Endpoint.generate(&block)
         endpoint.send :include, helpers
         b.run endpoint
-        
+
         b.to_app
       end
-      
+
       def inherited(subclass)
         subclass.reset!
       end
-      
+
       def route_set
         @route_set ||= Rack::Mount::RouteSet.new
       end
-      
+
       def compile_path(path)
         parts = []
         parts << prefix if prefix
@@ -248,8 +252,8 @@ module Grape
         parts.last << '(.:format)'
         Rack::Mount::Utils.normalize_path(parts.join('/'))
       end
-    end  
-    
-    reset! 
+    end
+
+    reset!
   end
 end

@@ -15,15 +15,15 @@ module Grape
         :json => :encode_json,
         :txt => :encode_txt,
       }
-      
+
       def default_options
-        { 
+        {
           :default_format => :txt,
           :formatters => {},
           :content_types => {}
         }
       end
-      
+
       def content_types
         CONTENT_TYPES.merge(options[:content_types])
       end
@@ -31,45 +31,45 @@ module Grape
       def formatters
         FORMATTERS.merge(options[:formatters])
       end
-      
+
       def mime_types
         content_types.invert
       end
-      
+
       def headers
         env.dup.inject({}){|h,(k,v)| h[k.downcase] = v; h}
       end
-      
+
       def before
         fmt = format_from_extension || format_from_header || options[:default_format]
-                
+
         if content_types.key?(fmt)
-          env['api.format'] = fmt          
+          env['api.format'] = fmt
         else
           throw :error, :status => 406, :message => 'The requested format is not supported.'
         end
       end
-      
+
       def format_from_extension
         parts = request.path.split('.')
         hit = parts.last.to_sym
-        
+
         if parts.size <= 1
           nil
         else
           hit
         end
       end
-      
+
       def format_from_header
-        mime_array.each do |t| 
+        mime_array.each do |t|
           if mime_types.key?(t)
             return mime_types[t]
           end
         end
         nil
       end
-      
+
       def mime_array
         accept = headers['accept']
         if accept
@@ -81,7 +81,7 @@ module Grape
           []
         end
       end
-      
+
       def after
         status, headers, bodies = *@app_response
         formatter = formatter_for env['api.format']
@@ -103,17 +103,23 @@ module Grape
           spec
         end
       end
-      
+
       def encode_json(object)
-        if object.respond_to? :serializable_hash
+        json = if object.respond_to? :serializable_hash
           MultiJson.encode(object.serializable_hash)
         elsif object.respond_to? :to_json
           object.to_json
         else
           MultiJson.encode(object)
         end
+
+        if options[:callback] && env["QUERY_STRING"] =~ /#{options[:callback]}=([^&]+)/
+          "#{$1}(#{json});"
+        else
+          json
+        end
       end
-      
+
       def encode_txt(object)
         object.respond_to?(:to_txt) ? object.to_txt : object.to_s
       end
